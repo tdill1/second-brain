@@ -1,0 +1,24 @@
+# OpenClaw internals
+.openclaw/
+
+# Local transcripts / scratch
+transcript*.txt
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+
+# Secrets (if you ever add them)
+.env
+.env.*
+secrets/
+
+# Node / Python
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# SSH keys (never commit)
+.ssh/
