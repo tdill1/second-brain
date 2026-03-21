@@ -1,12 +1,28 @@
 # Active Projects Dashboard
 
-_Last updated: 2026-03-18_
+_Last updated: 2026-03-21_
 
 Quick links:
 - PARA home: `../README.md`
 - Conventions: `../ops/conventions.md`
 
 ## Active projects
+
+### Eastlake Boys Basketball Booster Club
+- **Status:** Active — Inaugural year
+- **Description:** Non-profit booster club supporting the EHS Boys Basketball Program. Fundraising, tournaments, community engagement.
+- **Links:**
+  - Main: `booster-club/README.md`
+  - Bylaws: `booster-club/governance/bylaws-2026.md`
+  - Meeting notes: `booster-club/meetings/`
+  - Membership: `booster-club/membership/registrations.md`
+  - CIF data: `booster-club/reference/cif-data/`
+- **Next steps:**
+  - [ ] Finalize bylaws and hold ratification vote
+  - [ ] Hold board elections (President, VP, Secretary, Treasurer)
+  - [ ] File for non-profit status
+  - [ ] Establish website and branding
+  - [ ] Plan off-season fundraising (SDSU/Montgomery tournaments)
 
 ### abstractwishes
 - **Status:** Active
