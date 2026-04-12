@@ -1,0 +1,362 @@
+{
+  "name": "02 - Daily Review Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-8pm",
+      "name": "Every Day at 8 PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Triggers every day at 8:00 PM local time. This gives you time to finish your day before generating the review. Adjust the cron expression for your timezone if n8n runs in UTC."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_TASKS_DATABASE_ID"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Done"
+            },
+            {
+              "key": "Completed Date|date",
+              "condition": "pastWeek",
+              "dateValue": "={{ $now.startOf('day').toISO() }}"
+            }
+          ],
+          "combinator": "AND"
+        }
+      },
+      "id": "get-completed-tasks",
+      "name": "Get Completed Tasks Today",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 300],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Queries the Notion Tasks database for all tasks with Status = 'Done' that were completed today. Adjust the filter if your date property name differs. Replace database ID and credential ID."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_TASKS_DATABASE_ID"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "In Progress"
+            }
+          ]
+        }
+      },
+      "id": "get-in-progress-tasks",
+      "name": "Get In-Progress Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 500],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Gets all tasks still in progress to include in the daily review as carry-over items."
+    },
+    {
+      "parameters": {
+        "mode": "multiplex",
+        "mergeByFields": {},
+        "options": {}
+      },
+      "id": "merge-task-data",
+      "name": "Merge Task Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [680, 400],
+      "notes": "Combines completed tasks and in-progress tasks into a single dataset for Claude to analyze."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all task data into a single summary object\nconst items = $input.all();\n\nconst completed = [];\nconst inProgress = [];\n\nfor (const item of items) {\n  const props = item.json.properties || item.json;\n  const title = props.Name?.title?.[0]?.plain_text || props.title || 'Untitled';\n  const project = props.Project?.select?.name || 'No Project';\n  const priority = props.Priority?.select?.name || 'Medium';\n  const status = props.Status?.select?.name || 'Unknown';\n  \n  if (status === 'Done') {\n    completed.push({ title, project, priority });\n  } else {\n    inProgress.push({ title, project, priority });\n  }\n}\n\nreturn [{\n  json: {\n    date: new Date().toISOString().split('T')[0],\n    completed_count: completed.length,\n    in_progress_count: inProgress.length,\n    completed,\n    in_progress: inProgress\n  }\n}];"
+      },
+      "id": "aggregate-tasks",
+      "name": "Aggregate Task Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400],
+      "notes": "Transforms raw Notion data into a clean summary object with completed tasks and in-progress tasks categorized by project and priority."
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "REPLACE_WITH_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a daily review summary for {{ $json.date }}.\\n\\nCompleted Tasks ({{ $json.completed_count }}):\\n{{ JSON.stringify($json.completed, null, 2) }}\\n\\nStill In Progress ({{ $json.in_progress_count }}):\\n{{ JSON.stringify($json.in_progress, null, 2) }}\\n\\nWrite a brief, encouraging daily review that includes:\\n1. **Summary**: 2-3 sentence narrative of what was accomplished\\n2. **Wins**: Key accomplishments worth celebrating\\n3. **Patterns**: Any patterns you notice (e.g., focus areas, priority distribution)\\n4. **Carry Forward**: What's still in progress and suggested priorities for tomorrow\\n5. **Reflection Prompt**: One thoughtful question for journaling\\n\\nKeep it concise and actionable. Use a warm but professional tone.\"\n    }\n  ]\n}"
+      },
+      "id": "claude-generate-review",
+      "name": "Claude - Generate Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 400],
+      "notes": "Sends the aggregated task data to Claude for narrative daily review generation. Claude provides a human-readable summary with wins, patterns, and a reflection prompt. Replace API key."
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.first().json;\nconst reviewText = claudeResponse.content[0].text;\nconst date = new Date().toISOString().split('T')[0];\nconst dayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });\n\nreturn [{\n  json: {\n    title: `Daily Review — ${dayName}, ${date}`,\n    review_content: reviewText,\n    date: date\n  }\n}];"
+      },
+      "id": "format-review",
+      "name": "Format Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400],
+      "notes": "Formats Claude's response into a clean title and content block for the Notion page."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_DAILY_REVIEWS_DATABASE_ID"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{ $json.title }}"
+            },
+            {
+              "key": "Date|date",
+              "dateValue": "={{ $json.date }}"
+            },
+            {
+              "key": "Type|select",
+              "selectValue": "Auto-Generated"
+            }
+          ]
+        },
+        "blockUi": {
+          "blockValues": [
+            {
+              "type": "paragraph",
+              "richTextUi": {
+                "richTextValues": [
+                  {
+                    "textValue": "={{ $json.review_content }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "create-review-page",
+      "name": "Create Daily Review in Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1560, 400],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Creates a new page in the Daily Reviews database in Notion with the AI-generated review content. Replace the database ID with your Daily Reviews database ID."
+    },
+    {
+      "parameters": {
+        "url": "https://ntfy.sh/REPLACE_WITH_YOUR_NTFY_TOPIC",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Title",
+              "value": "Daily Review Ready"
+            },
+            {
+              "name": "Priority",
+              "value": "3"
+            },
+            {
+              "name": "Tags",
+              "value": "memo,brain"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "=Your daily review for {{ $json.date }} is ready in Notion. {{ $('Aggregate Task Summary').item.json.completed_count }} tasks completed today!"
+      },
+      "id": "send-notification",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 400],
+      "notes": "Sends a push notification via ntfy.sh (free, self-hostable notification service). Replace the topic with your ntfy topic. You can also swap this for Slack, Discord, email, or any other notification method."
+    }
+  ],
+  "connections": {
+    "Every Day at 8 PM": {
+      "main": [
+        [
+          {
+            "node": "Get Completed Tasks Today",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get In-Progress Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Completed Tasks Today": {
+      "main": [
+        [
+          {
+            "node": "Merge Task Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get In-Progress Tasks": {
+      "main": [
+        [
+          {
+            "node": "Merge Task Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Task Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Task Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Task Summary": {
+      "main": [
+        [
+          {
+            "node": "Claude - Generate Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Generate Review": {
+      "main": [
+        [
+          {
+            "node": "Format Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Review": {
+      "main": [
+        [
+          {
+            "node": "Create Daily Review in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Daily Review in Notion": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "second-brain",
+      "id": "tag-second-brain"
+    },
+    {
+      "name": "review",
+      "id": "tag-review"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

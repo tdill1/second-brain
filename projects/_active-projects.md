@@ -1,14 +1,32 @@
 # Active Projects Dashboard
 
-_Last updated: 2026-03-21_
+_Last updated: 2026-04-12_
 
 Quick links:
 - PARA home: `../README.md`
 - Conventions: `../ops/conventions.md`
+- **Project Roadmap: `../ops/project-roadmap.md`**
+- **Weekly Review Template: `../ops/weekly-review-template.md`**
 
-## Active projects
+---
 
-### Eastlake Boys Basketball Booster Club
+## Priority Stack
+
+| # | Project | Status | Focus Level |
+|---|---------|--------|-------------|
+| 1 | Booster Club | Active — Inaugural year | 🔴 High |
+| 2 | The Purpose Project | Concept / Discovery | 🔴 High |
+| 3 | TriDimension | Active — GHL SaaS Launch | 🔴 High |
+| 4 | Car Rental Business | Active — Revenue generating | 🟡 Medium |
+| 5 | abstractwishes | Active — Brand building | 🟡 Medium |
+| 6 | DEI Thesis | Active — Academic | 🟢 Low (set deadline or pause) |
+| 7 | TrueSentiments | Active — Needs direction | 🟢 Low (decide: activate or archive) |
+
+---
+
+## Active Projects
+
+### 1. Eastlake Boys Basketball Booster Club
 - **Status:** Active — Inaugural year
 - **Description:** Non-profit booster club supporting the EHS Boys Basketball Program. Fundraising, tournaments, community engagement.
 - **Links:**
@@ -24,33 +42,9 @@ Quick links:
   - [ ] Establish website and branding
   - [ ] Plan off-season fundraising (SDSU/Montgomery tournaments)
 
-### abstractwishes
-- **Status:** Active
-- **Description:** Brand development and social media presence.
-- **Links:** `abstractwishes/README.md`
-- **Next steps:**
-  - [ ] Define current priorities
-  - [ ] Document active workstreams
-
-### Car Rental Business ("Budget Poway")
-- **Status:** Active
-- **Description:** Car rental operations and business management.
-- **Links:** `car-rental-business/README.md`
-- **Next steps:**
-  - [ ] Define current priorities
-  - [ ] Document active workstreams
-
-### DEI Thesis
-- **Status:** Active
-- **Description:** Research thesis on Diversity, Equity, and Inclusion.
-- **Links:** `dei-thesis/README.md`
-- **Next steps:**
-  - [ ] Define current priorities
-  - [ ] Document active workstreams
-
-### The Purpose Project
-- **Status:** Concept / discovery
-- **Working one-liner:** Help young people discover what they’re here to do—and give them a practical, supported pathway to skills, education, and paid work aligned with that purpose.
+### 2. The Purpose Project
+- **Status:** Concept / Discovery
+- **Working one-liner:** Help young people discover what they're here to do—and give them a practical, supported pathway to skills, education, and paid work aligned with that purpose.
 - **Links:**
   - Main: `the-purpose-project/README.md`
   - Vision + North Star: `the-purpose-project/01-vision/`
@@ -65,27 +59,73 @@ Quick links:
   - [ ] Pick initial pilot format (cohort size, duration, delivery)
   - [ ] Create a 1–2 page donor concept note
 
-### TriDimension
-- **Status:** Active
-- **Description:** Automation project.
-- **Links:** `tridimension/README.md`
+### 3. TriDimension (GHL SaaS)
+- **Status:** Active — Launch phase
+- **Description:** GoHighLevel SaaS offering for local service businesses. White-labeled automation platform with niche-specific snapshots.
+- **Links:**
+  - Main: `tridimension/README.md`
+  - Strategic Action Plan: `tridimension/strategic-action-plan.md`
+  - Next Actions: `tridimension/next-actions.md`
 - **Next steps:**
-  - [ ] Define current priorities
-  - [ ] Document active workstreams
+  - [ ] Complete Stripe integration and SaaS plan configuration
+  - [ ] Build niche-specific snapshot (Missed Call Text Back, Reviews, Chat Widget)
+  - [ ] Identify 20 local businesses and draft "free-to-fee" pitch
+  - [ ] Secure 3 beta testers within 14 days
 
-### TrueSentiments
-- **Status:** Active
-- **Description:** _To be defined._
-- **Links:** `truesentiments/README.md`
+### 4. Car Rental Business ("Budget Poway")
+- **Status:** Active — Revenue generating
+- **Description:** Car rental operations and business management. Focus on fleet utilization, booking workflows, and cost control.
+- **Links:** `car-rental-business/README.md`
 - **Next steps:**
-  - [ ] Define current priorities
-  - [ ] Document active workstreams
+  - [ ] Document current fleet inventory and utilization rates
+  - [ ] Map end-to-end booking workflow
+  - [ ] Set up financial tracking dashboard
+
+### 5. abstractwishes
+- **Status:** Active — Brand building
+- **Description:** Brand development and social media presence. Content creation and community growth.
+- **Links:** `abstractwishes/README.md`
+- **Next steps:**
+  - [ ] Finalize brand identity guidelines
+  - [ ] Create 30-day content calendar
+  - [ ] Set up analytics tracking
+
+### 6. DEI Thesis
+- **Status:** Active — Academic research
+- **Description:** Research thesis on Diversity, Equity, and Inclusion.
+- **Links:** `dei-thesis/README.md`
+- **Next steps:**
+  - [ ] Finalize thesis statement
+  - [ ] Complete literature review outline
+  - [ ] Set submission deadline
+
+### 7. TrueSentiments
+- **Status:** Active — Needs direction
+- **Description:** Wellness/self-care brand. Research phase with site analysis completed Feb 2025.
+- **Links:**
+  - Main: `truesentiments/README.md`
+  - Research: `truesentiments/02-research/`
+- **Next steps:**
+  - [ ] Decide: actively pursue or archive?
+  - [ ] If active: complete brand audit and define growth strategy
+  - [ ] If archiving: move to `../archive/truesentiments/`
 
 ---
 
-## Suggested next move (optional)
-Pick one project to “activate” this week, then I’ll help you fill in a short section in its README:
-- Current priorities (max 3)
-- Active workstreams
-- Next 3 actions
-- Definition of done / success
+## System Infrastructure
+
+### Second Brain Ops
+- **Roadmap:** `../ops/project-roadmap.md`
+- **Weekly Review Template:** `../ops/weekly-review-template.md`
+- **Notion Setup Guide:** `../ops/notion-setup-guide.md`
+- **n8n Workflows:** `../ops/n8n-workflows/`
+- **GitHub Project Setup:** `../ops/github-project-setup.md`
+- **Conventions:** `../ops/conventions.md`
+
+### Automation Status
+- [ ] Notion workspace — Not yet set up
+- [ ] n8n instance — Not yet deployed
+- [ ] Voice capture workflow — Template ready, needs deployment
+- [ ] Daily review automation — Template ready, needs deployment
+- [ ] GitHub ↔ Notion sync — Template ready, needs deployment
+- [ ] Morning briefing — Template ready, needs deployment

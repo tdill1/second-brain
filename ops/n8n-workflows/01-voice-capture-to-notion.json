@@ -1,0 +1,306 @@
+{
+  "name": "01 - Voice Capture to Notion",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Poll Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Triggers this workflow every 5 minutes to check for new Google Tasks entries. These tasks come from voice capture via Google Assistant or manual entry."
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "taskListId": "@default",
+        "returnAll": false,
+        "limit": 20,
+        "filters": {
+          "showCompleted": false,
+          "showHidden": false,
+          "updatedMin": "={{ $now.minus({ minutes: 6 }).toISO() }}"
+        }
+      },
+      "id": "google-tasks-read",
+      "name": "Get New Google Tasks",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_TASKS_CREDENTIAL_ID",
+          "name": "Google Tasks Account"
+        }
+      },
+      "notes": "Reads tasks from Google Tasks that were updated in the last 6 minutes (1 min buffer over 5 min poll). Filters out completed tasks. Replace credential ID with your Google Tasks OAuth2 credential."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.title }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "filter-empty",
+      "name": "Filter Empty Tasks",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "notes": "Filters out any tasks that have empty titles to avoid sending blank data to Claude."
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "REPLACE_WITH_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1024,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Parse this voice-captured task and extract structured data. Return ONLY valid JSON with no other text.\\n\\nTask text: {{ $json.title }}{{ $json.notes ? ' — Notes: ' + $json.notes : '' }}\\n\\nExtract:\\n- title: Clean, concise task title\\n- project: Best-guess project name (e.g., 'Second Brain', 'Work', 'Personal', 'Health', 'Finance')\\n- priority: One of 'Critical', 'High', 'Medium', 'Low' based on urgency cues\\n- tags: Array of relevant tags (max 4)\\n- due_date: ISO date string if a date/deadline is mentioned, otherwise null\\n- context: One of '@computer', '@phone', '@errands', '@home', '@office', '@anywhere'\\n- estimated_minutes: Rough time estimate as integer\\n\\nJSON:\"\n    }\n  ]\n}"
+      },
+      "id": "claude-parse-task",
+      "name": "Claude - Parse Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 280],
+      "notes": "Sends the raw task text to Claude API for intelligent parsing. Claude extracts project, priority, tags, due date, context, and time estimate. Replace the API key with your Anthropic API key. Uses claude-sonnet-4-20250514 for speed and cost efficiency."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's response to extract the structured task data\nconst claudeResponse = $input.first().json;\nconst content = claudeResponse.content[0].text;\n\n// Parse the JSON from Claude's response\nlet parsed;\ntry {\n  // Try to extract JSON if Claude wrapped it in markdown code blocks\n  const jsonMatch = content.match(/```json?\\n?([\\s\\S]*?)\\n?```/) || content.match(/\\{[\\s\\S]*\\}/);\n  const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;\n  parsed = JSON.parse(jsonStr);\n} catch (e) {\n  // Fallback if parsing fails\n  parsed = {\n    title: $input.first().json.title || 'Unparsed Task',\n    project: 'Inbox',\n    priority: 'Medium',\n    tags: [],\n    due_date: null,\n    context: '@anywhere',\n    estimated_minutes: 15\n  };\n}\n\nreturn [{\n  json: {\n    ...parsed,\n    original_text: items[0]?.json?.title || '',\n    source: 'google-tasks-voice-capture',\n    captured_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-claude-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 280],
+      "notes": "Extracts the structured JSON from Claude's response. Handles cases where Claude wraps JSON in code blocks. Falls back to sensible defaults if parsing fails."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_TASKS_DATABASE_ID"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{ $json.title }}"
+            },
+            {
+              "key": "Project|select",
+              "selectValue": "={{ $json.project }}"
+            },
+            {
+              "key": "Priority|select",
+              "selectValue": "={{ $json.priority }}"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Inbox"
+            },
+            {
+              "key": "Context|select",
+              "selectValue": "={{ $json.context }}"
+            },
+            {
+              "key": "Source|select",
+              "selectValue": "Voice Capture"
+            },
+            {
+              "key": "Estimated Minutes|number",
+              "numberValue": "={{ $json.estimated_minutes }}"
+            },
+            {
+              "key": "Tags|multi_select",
+              "multiSelectValue": "={{ $json.tags.join(',') }}"
+            },
+            {
+              "key": "Due Date|date",
+              "dateValue": "={{ $json.due_date || '' }}"
+            },
+            {
+              "key": "Original Text|rich_text",
+              "textContent": "={{ $json.original_text }}"
+            }
+          ]
+        }
+      },
+      "id": "create-notion-task",
+      "name": "Create Notion Task",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1340, 280],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Creates a new page in the Notion Tasks database with all the enriched fields from Claude's parsing. Replace the database ID with your actual Notion Tasks database ID and the credential ID with your Notion integration credential."
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "taskListId": "@default",
+        "taskId": "={{ $('Get New Google Tasks').item.json.id }}"
+      },
+      "id": "complete-google-task",
+      "name": "Complete Google Task",
+      "type": "n8n-nodes-base.googleTasks",
+      "typeVersion": 1,
+      "position": [1560, 280],
+      "credentials": {
+        "googleTasksOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_TASKS_CREDENTIAL_ID",
+          "name": "Google Tasks Account"
+        }
+      },
+      "notes": "Marks the original Google Task as complete (or deletes it) after it has been successfully created in Notion. This prevents duplicate processing on the next poll cycle."
+    },
+    {
+      "parameters": {},
+      "id": "no-op-false",
+      "name": "No New Tasks",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 440],
+      "notes": "Dead end for empty/invalid tasks. No action needed."
+    }
+  ],
+  "connections": {
+    "Poll Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get New Google Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get New Google Tasks": {
+      "main": [
+        [
+          {
+            "node": "Filter Empty Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Empty Tasks": {
+      "main": [
+        [
+          {
+            "node": "Claude - Parse Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Parse Task": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion Task": {
+      "main": [
+        [
+          {
+            "node": "Complete Google Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "second-brain",
+      "id": "tag-second-brain"
+    },
+    {
+      "name": "capture",
+      "id": "tag-capture"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

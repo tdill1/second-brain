@@ -1,0 +1,370 @@
+{
+  "name": "03 - GitHub Notion Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "hourly-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Triggers every hour on the hour to sync GitHub issues with Notion. Adjust frequency as needed — more frequent = more API calls."
+    },
+    {
+      "parameters": {
+        "owner": "tdill1",
+        "repository": "second-brain",
+        "returnAll": true,
+        "filters": {
+          "state": "all",
+          "since": "={{ $now.minus({ hours: 2 }).toISO() }}"
+        }
+      },
+      "id": "get-github-issues",
+      "name": "Get GitHub Issues",
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "githubApi": {
+          "id": "REPLACE_WITH_GITHUB_CREDENTIAL_ID",
+          "name": "GitHub Account"
+        }
+      },
+      "notes": "Fetches all issues (open and closed) from tdill1/second-brain repo updated in the last 2 hours (1 hour buffer). Replace credential ID with your GitHub personal access token credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform GitHub issues into a format suitable for Notion sync\nconst issues = $input.all();\nconst results = [];\n\nfor (const item of issues) {\n  const issue = item.json;\n  \n  // Map GitHub labels to categories\n  const labels = (issue.labels || []).map(l => l.name || l);\n  const isFeature = labels.some(l => l.includes('feature') || l.includes('enhancement'));\n  const isBug = labels.some(l => l.includes('bug'));\n  const isDoc = labels.some(l => l.includes('documentation') || l.includes('docs'));\n  \n  // Map GitHub state to Notion status\n  let notionStatus = 'Backlog';\n  if (issue.state === 'closed') {\n    notionStatus = 'Done';\n  } else if (issue.assignee) {\n    notionStatus = 'In Progress';\n  }\n  \n  // Determine type\n  let type = 'Task';\n  if (isFeature) type = 'Feature';\n  if (isBug) type = 'Bug';\n  if (isDoc) type = 'Documentation';\n  \n  results.push({\n    json: {\n      github_number: issue.number,\n      github_id: issue.id,\n      title: issue.title,\n      body: (issue.body || '').substring(0, 500),\n      state: issue.state,\n      notion_status: notionStatus,\n      type: type,\n      labels: labels,\n      github_url: issue.html_url,\n      assignee: issue.assignee?.login || 'unassigned',\n      milestone: issue.milestone?.title || null,\n      created_at: issue.created_at,\n      updated_at: issue.updated_at,\n      closed_at: issue.closed_at\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "transform-issues",
+      "name": "Transform Issue Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "notes": "Transforms GitHub issue data into Notion-compatible format. Maps GitHub labels to types (Feature, Bug, Task, Documentation). Maps issue state + assignee to Notion status (Backlog, In Progress, Done)."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_PROJECTS_DATABASE_ID"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Source|select",
+              "condition": "equals",
+              "selectValue": "GitHub"
+            }
+          ]
+        }
+      },
+      "id": "get-existing-notion-items",
+      "name": "Get Existing Notion Items",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 520],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Fetches all existing items in the Notion Projects database that came from GitHub. Used to determine whether to create new items or update existing ones."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compare GitHub issues with existing Notion items\n// Determine which need to be created vs updated\nconst githubIssues = $('Transform Issue Data').all();\nconst notionItems = $('Get Existing Notion Items').all();\n\n// Build a map of existing Notion items by GitHub issue number\nconst notionMap = {};\nfor (const item of notionItems) {\n  const props = item.json.properties || item.json;\n  const ghNumber = props['GitHub Number']?.number || props.github_number;\n  if (ghNumber) {\n    notionMap[ghNumber] = {\n      page_id: item.json.id,\n      title: props.Name?.title?.[0]?.plain_text || '',\n      status: props.Status?.select?.name || ''\n    };\n  }\n}\n\nconst toCreate = [];\nconst toUpdate = [];\n\nfor (const issue of githubIssues) {\n  const ghNum = issue.json.github_number;\n  if (notionMap[ghNum]) {\n    // Issue exists in Notion — check if update needed\n    const existing = notionMap[ghNum];\n    if (existing.status !== issue.json.notion_status || existing.title !== issue.json.title) {\n      toUpdate.push({\n        json: {\n          ...issue.json,\n          notion_page_id: existing.page_id,\n          action: 'update'\n        }\n      });\n    }\n  } else {\n    // New issue — needs to be created\n    toCreate.push({\n      json: {\n        ...issue.json,\n        action: 'create'\n      }\n    });\n  }\n}\n\n// Output both sets\nreturn [...toCreate, ...toUpdate];"
+      },
+      "id": "diff-and-merge",
+      "name": "Diff & Decide Create/Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400],
+      "notes": "Compares GitHub issues against existing Notion items. Determines which issues need to be created (new) versus updated (changed status or title). Bidirectional awareness — only syncs what has changed."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action }}",
+              "operation": "equals",
+              "value2": "create"
+            }
+          ]
+        }
+      },
+      "id": "route-action",
+      "name": "Create or Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "notes": "Routes items to either the Create or Update Notion node based on whether the GitHub issue already exists in Notion."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_PROJECTS_DATABASE_ID"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{ $json.title }}"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "={{ $json.notion_status }}"
+            },
+            {
+              "key": "Type|select",
+              "selectValue": "={{ $json.type }}"
+            },
+            {
+              "key": "Source|select",
+              "selectValue": "GitHub"
+            },
+            {
+              "key": "GitHub Number|number",
+              "numberValue": "={{ $json.github_number }}"
+            },
+            {
+              "key": "GitHub URL|url",
+              "urlValue": "={{ $json.github_url }}"
+            },
+            {
+              "key": "Assignee|rich_text",
+              "textContent": "={{ $json.assignee }}"
+            },
+            {
+              "key": "Labels|multi_select",
+              "multiSelectValue": "={{ $json.labels.join(',') }}"
+            }
+          ]
+        },
+        "blockUi": {
+          "blockValues": [
+            {
+              "type": "paragraph",
+              "richTextUi": {
+                "richTextValues": [
+                  {
+                    "textValue": "={{ $json.body }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "create-notion-item",
+      "name": "Create in Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1340, 340],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Creates a new page in Notion Projects database for GitHub issues that don't exist yet. Includes issue body as page content."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": "={{ $json.notion_page_id }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "={{ $json.title }}"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "={{ $json.notion_status }}"
+            },
+            {
+              "key": "Type|select",
+              "selectValue": "={{ $json.type }}"
+            },
+            {
+              "key": "Labels|multi_select",
+              "multiSelectValue": "={{ $json.labels.join(',') }}"
+            }
+          ]
+        }
+      },
+      "id": "update-notion-item",
+      "name": "Update in Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1340, 500],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Updates existing Notion pages when their corresponding GitHub issue has changed (status, title, or labels)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log sync summary\nconst allItems = $input.all();\nconst created = allItems.filter(i => i.json.action === 'create').length;\nconst updated = allItems.filter(i => i.json.action === 'update').length;\n\nconsole.log(`GitHub-Notion Sync complete: ${created} created, ${updated} updated`);\n\nreturn [{\n  json: {\n    sync_time: new Date().toISOString(),\n    items_created: created,\n    items_updated: updated,\n    total_processed: allItems.length\n  }\n}];"
+      },
+      "id": "sync-summary",
+      "name": "Sync Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 420],
+      "notes": "Logs a summary of the sync operation — how many items were created vs updated. Useful for debugging and monitoring."
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Get GitHub Issues",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Existing Notion Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get GitHub Issues": {
+      "main": [
+        [
+          {
+            "node": "Transform Issue Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Issue Data": {
+      "main": [
+        [
+          {
+            "node": "Diff & Decide Create/Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Notion Items": {
+      "main": [
+        [
+          {
+            "node": "Diff & Decide Create/Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diff & Decide Create/Update": {
+      "main": [
+        [
+          {
+            "node": "Create or Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or Update?": {
+      "main": [
+        [
+          {
+            "node": "Create in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create in Notion": {
+      "main": [
+        [
+          {
+            "node": "Sync Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update in Notion": {
+      "main": [
+        [
+          {
+            "node": "Sync Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "second-brain",
+      "id": "tag-second-brain"
+    },
+    {
+      "name": "github",
+      "id": "tag-github"
+    },
+    {
+      "name": "sync",
+      "id": "tag-sync"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

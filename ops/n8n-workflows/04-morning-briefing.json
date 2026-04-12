@@ -1,0 +1,539 @@
+{
+  "name": "04 - Morning Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-6am",
+      "name": "Every Day at 6 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "notes": "Triggers every day at 6:00 AM local time. Generates your morning briefing before you start the day. Adjust the cron expression for your timezone if n8n runs in UTC."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_TASKS_DATABASE_ID"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Today"
+            }
+          ]
+        }
+      },
+      "id": "get-today-tasks",
+      "name": "Get Today Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 200],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Fetches all tasks from Notion with Status = 'Today'. These are tasks you've already committed to for today."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_TASKS_DATABASE_ID"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "selectValue": "Backlog"
+            },
+            {
+              "key": "Priority|select",
+              "condition": "equals",
+              "selectValue": "High"
+            }
+          ],
+          "combinator": "AND"
+        },
+        "limit": 10
+      },
+      "id": "get-backlog-high",
+      "name": "Get High-Priority Backlog",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 400],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Fetches high-priority backlog items that could be pulled into today's work. Limited to top 10 to keep the briefing focused."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_TASKS_DATABASE_ID"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Due Date|date",
+              "condition": "onOrBefore",
+              "dateValue": "={{ $now.endOf('day').toISO() }}"
+            },
+            {
+              "key": "Status|select",
+              "condition": "notEquals",
+              "selectValue": "Done"
+            }
+          ],
+          "combinator": "AND"
+        }
+      },
+      "id": "get-due-today",
+      "name": "Get Tasks Due Today",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [460, 600],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Fetches any tasks with a due date of today or earlier that are NOT done. These are urgent items that need attention — overdue items will also show up here."
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REPLACE_WITH_GOOGLE_OAUTH_TOKEN"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "timeMin",
+              "value": "={{ $now.startOf('day').toISO() }}"
+            },
+            {
+              "name": "timeMax",
+              "value": "={{ $now.endOf('day').toISO() }}"
+            },
+            {
+              "name": "singleEvents",
+              "value": "true"
+            },
+            {
+              "name": "orderBy",
+              "value": "startTime"
+            }
+          ]
+        }
+      },
+      "id": "get-calendar-events",
+      "name": "Get Google Calendar Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 800],
+      "notes": "Fetches today's Google Calendar events via the Calendar API. In production, use the Google Calendar n8n node with OAuth2 credentials instead of raw HTTP. This shows the API structure for reference. Replace with proper Google Calendar node and credentials."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all data sources into a single briefing payload\nconst todayTasks = $('Get Today Tasks').all().map(i => {\n  const p = i.json.properties || i.json;\n  return {\n    id: i.json.id,\n    title: p.Name?.title?.[0]?.plain_text || 'Untitled',\n    project: p.Project?.select?.name || 'No Project',\n    priority: p.Priority?.select?.name || 'Medium',\n    context: p.Context?.select?.name || '@anywhere',\n    estimated_minutes: p['Estimated Minutes']?.number || 30\n  };\n});\n\nconst backlogTasks = $('Get High-Priority Backlog').all().map(i => {\n  const p = i.json.properties || i.json;\n  return {\n    id: i.json.id,\n    title: p.Name?.title?.[0]?.plain_text || 'Untitled',\n    project: p.Project?.select?.name || 'No Project',\n    priority: p.Priority?.select?.name || 'High',\n    estimated_minutes: p['Estimated Minutes']?.number || 30\n  };\n});\n\nconst dueTasks = $('Get Tasks Due Today').all().map(i => {\n  const p = i.json.properties || i.json;\n  return {\n    id: i.json.id,\n    title: p.Name?.title?.[0]?.plain_text || 'Untitled',\n    due_date: p['Due Date']?.date?.start || 'today',\n    priority: p.Priority?.select?.name || 'High'\n  };\n});\n\nlet calendarEvents = [];\ntry {\n  const calData = $('Get Google Calendar Events').first().json;\n  calendarEvents = (calData.items || []).map(e => ({\n    title: e.summary || 'No Title',\n    start: e.start?.dateTime || e.start?.date || '',\n    end: e.end?.dateTime || e.end?.date || '',\n    location: e.location || ''\n  }));\n} catch(e) {\n  calendarEvents = [];\n}\n\n// Calculate total estimated time\nconst totalMinutes = todayTasks.reduce((sum, t) => sum + t.estimated_minutes, 0);\n\nreturn [{\n  json: {\n    date: new Date().toISOString().split('T')[0],\n    day_name: new Date().toLocaleDateString('en-US', { weekday: 'long' }),\n    today_tasks: todayTasks,\n    today_task_count: todayTasks.length,\n    total_estimated_minutes: totalMinutes,\n    backlog_candidates: backlogTasks,\n    due_today_or_overdue: dueTasks,\n    calendar_events: calendarEvents,\n    calendar_event_count: calendarEvents.length\n  }\n}];"
+      },
+      "id": "aggregate-morning-data",
+      "name": "Aggregate Morning Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 500],
+      "notes": "Combines all data sources — today's tasks, high-priority backlog, due/overdue items, and calendar events — into a single structured object for Claude to analyze and prioritize."
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "REPLACE_WITH_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Create a morning briefing for {{ $json.day_name }}, {{ $json.date }}.\\n\\nTODAY'S COMMITTED TASKS ({{ $json.today_task_count }} tasks, ~{{ $json.total_estimated_minutes }} min estimated):\\n{{ JSON.stringify($json.today_tasks, null, 2) }}\\n\\nDUE TODAY OR OVERDUE:\\n{{ JSON.stringify($json.due_today_or_overdue, null, 2) }}\\n\\nHIGH-PRIORITY BACKLOG CANDIDATES:\\n{{ JSON.stringify($json.backlog_candidates, null, 2) }}\\n\\nCALENDAR EVENTS TODAY ({{ $json.calendar_event_count }}):\\n{{ JSON.stringify($json.calendar_events, null, 2) }}\\n\\nPlease provide:\\n1. **Priority Order**: Rank today's tasks in optimal execution order considering calendar blocks, energy levels (deep work morning, admin afternoon), and dependencies\\n2. **Time Blocks**: Suggest a rough schedule fitting tasks around calendar events\\n3. **Alerts**: Flag any overdue items, scheduling conflicts, or overcommitment (>6 hrs of tasks)\\n4. **Backlog Pull**: If there's slack in the day, recommend 1-2 backlog items to pull in\\n5. **Focus Theme**: A one-line theme for the day based on what's planned\\n\\nAlso return a JSON block at the end with the suggested priority ranking:\\n```json\\n{\\\"priority_order\\\": [{\\\"id\\\": \\\"page-id\\\", \\\"rank\\\": 1, \\\"suggested_priority\\\": \\\"Critical|High|Medium|Low\\\"}]}\\n```\\n\\nBe concise and actionable.\"\n    }\n  ]\n}"
+      },
+      "id": "claude-prioritize",
+      "name": "Claude - Prioritize & Brief",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1020, 500],
+      "notes": "Sends all morning data to Claude for intelligent prioritization. Claude considers calendar blocks, energy patterns, task dependencies, and time estimates. Returns both a human-readable briefing and a JSON block with priority rankings. Replace API key."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's response and extract priority rankings\nconst claudeResponse = $input.first().json;\nconst content = claudeResponse.content[0].text;\n\n// Extract the priority order JSON from Claude's response\nlet priorityOrder = [];\ntry {\n  const jsonMatch = content.match(/```json\\n?([\\s\\S]*?)\\n?```/);\n  if (jsonMatch) {\n    const parsed = JSON.parse(jsonMatch[1]);\n    priorityOrder = parsed.priority_order || [];\n  }\n} catch (e) {\n  console.log('Could not parse priority JSON from Claude response');\n}\n\n// Extract briefing text (everything before the JSON block)\nconst briefingText = content.replace(/```json[\\s\\S]*?```/, '').trim();\n\nreturn [{\n  json: {\n    briefing_text: briefingText,\n    priority_order: priorityOrder,\n    date: new Date().toISOString().split('T')[0],\n    day_name: new Date().toLocaleDateString('en-US', { weekday: 'long' })\n  }\n}];"
+      },
+      "id": "parse-briefing",
+      "name": "Parse Briefing & Priorities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 500],
+      "notes": "Separates Claude's response into the human-readable briefing text and the machine-readable priority ranking JSON. The briefing goes to Notion; the rankings are used to update task priorities."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split priority rankings into individual items for batch update\nconst data = $input.first().json;\nconst items = data.priority_order.map(p => ({\n  json: {\n    page_id: p.id,\n    rank: p.rank,\n    suggested_priority: p.suggested_priority,\n    briefing_text: data.briefing_text,\n    date: data.date\n  }\n}));\n\n// If no priority items, pass through with just the briefing\nif (items.length === 0) {\n  return [{ json: { ...data, skip_updates: true } }];\n}\n\nreturn items;"
+      },
+      "id": "split-priorities",
+      "name": "Split Priority Updates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1460, 400],
+      "notes": "Splits the priority ranking array into individual items so each task can be updated in Notion separately."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skip_updates }}",
+              "operation": "notEqual",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-updates",
+      "name": "Has Priority Updates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1660, 400],
+      "notes": "Checks if there are priority updates to apply. Skips Notion updates if Claude didn't return any rankings."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": "={{ $json.page_id }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Priority|select",
+              "selectValue": "={{ $json.suggested_priority }}"
+            },
+            {
+              "key": "Day Rank|number",
+              "numberValue": "={{ $json.rank }}"
+            }
+          ]
+        }
+      },
+      "id": "update-task-priority",
+      "name": "Update Task Priority in Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1880, 340],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Updates each task's priority and daily rank in Notion based on Claude's recommendations. The 'Day Rank' field gives you a suggested execution order."
+    },
+    {
+      "parameters": {
+        "url": "https://ntfy.sh/REPLACE_WITH_YOUR_NTFY_TOPIC",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Title",
+              "value": "=Morning Briefing — {{ $('Parse Briefing & Priorities').item.json.day_name }}"
+            },
+            {
+              "name": "Priority",
+              "value": "4"
+            },
+            {
+              "name": "Tags",
+              "value": "sunrise,brain,coffee"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ $('Parse Briefing & Priorities').item.json.briefing_text.substring(0, 500) }}..."
+      },
+      "id": "send-briefing-notification",
+      "name": "Send Briefing Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1460, 660],
+      "notes": "Sends the morning briefing as a push notification via ntfy.sh. Truncated to 500 chars for the notification — full briefing is in Notion. Replace the ntfy topic with yours. Can also use Slack, Discord, email, etc."
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_NOTION_DAILY_REVIEWS_DATABASE_ID"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Name|title",
+              "title": "=Morning Briefing — {{ $json.day_name }}, {{ $json.date }}"
+            },
+            {
+              "key": "Date|date",
+              "dateValue": "={{ $json.date }}"
+            },
+            {
+              "key": "Type|select",
+              "selectValue": "Morning Briefing"
+            }
+          ]
+        },
+        "blockUi": {
+          "blockValues": [
+            {
+              "type": "paragraph",
+              "richTextUi": {
+                "richTextValues": [
+                  {
+                    "textValue": "={{ $json.briefing_text }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "save-briefing-notion",
+      "name": "Save Briefing to Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1460, 820],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CREDENTIAL_ID",
+          "name": "Notion Account"
+        }
+      },
+      "notes": "Saves the full morning briefing as a page in the Daily Reviews database (typed as 'Morning Briefing' to distinguish from evening reviews). Replace database ID."
+    }
+  ],
+  "connections": {
+    "Every Day at 6 AM": {
+      "main": [
+        [
+          {
+            "node": "Get Today Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get High-Priority Backlog",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Tasks Due Today",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Google Calendar Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Today Tasks": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Morning Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get High-Priority Backlog": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Morning Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tasks Due Today": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Morning Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Google Calendar Events": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Morning Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Morning Data": {
+      "main": [
+        [
+          {
+            "node": "Claude - Prioritize & Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude - Prioritize & Brief": {
+      "main": [
+        [
+          {
+            "node": "Parse Briefing & Priorities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Briefing & Priorities": {
+      "main": [
+        [
+          {
+            "node": "Split Priority Updates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Briefing Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Briefing to Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Priority Updates": {
+      "main": [
+        [
+          {
+            "node": "Has Priority Updates?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Priority Updates?": {
+      "main": [
+        [
+          {
+            "node": "Update Task Priority in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "second-brain",
+      "id": "tag-second-brain"
+    },
+    {
+      "name": "morning",
+      "id": "tag-morning"
+    },
+    {
+      "name": "briefing",
+      "id": "tag-briefing"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
